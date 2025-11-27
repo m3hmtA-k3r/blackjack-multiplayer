@@ -17,16 +17,210 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// Oyun Durumu
+const gameState = {
+  players: {}, // { playerId: { slot, cards, score, bet, status } }
+  dealer: { cards: [], score: 0 },
+  deck: [],
+  gameActive: false
+};
+
+// Kart Destesi Oluştur
+function createDeck() {
+  const suits = ['H', 'D', 'C', 'S']; // Hearts, Diamonds, Clubs, Spades
+  const values = ['A', '2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K'];
+  const deck = [];
+
+  for (let i = 0; i < 6; i++) { // 6 desteli ayakkabı
+    for (let suit of suits) {
+      for (let value of values) {
+        deck.push({ value, suit });
+      }
+    }
+  }
+
+  return deck.sort(() => Math.random() - 0.5); // Karıştır
+}
+
+// Kart Çek
+function drawCard() {
+  if (gameState.deck.length < 10) {
+    gameState.deck = createDeck(); // Yeni desteler ekle
+  }
+  return gameState.deck.pop();
+}
+
+// Puan Hesapla
+function calculateScore(cards) {
+  let score = 0;
+  let aces = 0;
+
+  for (let card of cards) {
+    if (card.value === 'A') {
+      aces++;
+      score += 11;
+    } else if (['K', 'Q', 'J'].includes(card.value)) {
+      score += 10;
+    } else if (card.value === 'T') {
+      score += 10;
+    } else {
+      score += parseInt(card.value);
+    }
+  }
+
+  // As puanını ayarla
+  while (score > 21 && aces > 0) {
+    score -= 10;
+    aces--;
+  }
+
+  return score;
+}
+
 // Socket.io connection
 io.on('connection', (socket) => {
   console.log('New player connected:', socket.id);
 
+  // Oyuncuyu bir slota ata
+  let assignedSlot = null;
+  for (let slot = 1; slot <= 7; slot++) {
+    if (!gameState.players[slot]) {
+      assignedSlot = slot;
+      gameState.players[slot] = {
+        id: socket.id,
+        slot: slot,
+        cards: [],
+        score: 0,
+        bet: 0,
+        status: 'waiting'
+      };
+      break;
+    }
+  }
+
+  if (assignedSlot) {
+    socket.emit('playerJoined', { playerId: socket.id, slot: assignedSlot });
+    io.emit('playerConnected', { slot: assignedSlot, playerId: socket.id });
+    console.log(`Player ${socket.id} assigned to slot ${assignedSlot}`);
+  } else {
+    socket.emit('error', { message: 'Tüm masalar dolu' });
+  }
+
+  // Oyuncu kartı çeker (Hit)
+  socket.on('playerHit', (data) => {
+    const slot = data.slot;
+    if (gameState.players[slot]) {
+      const newCard = drawCard();
+      gameState.players[slot].cards.push(newCard);
+      gameState.players[slot].score = calculateScore(gameState.players[slot].cards);
+
+      socket.emit('playerCards', {
+        slot: slot,
+        cards: gameState.players[slot].cards,
+        score: gameState.players[slot].score,
+        bet: gameState.players[slot].bet
+      });
+
+      // Kart Yüksekliği Kontrol
+      if (gameState.players[slot].score > 21) {
+        socket.emit('gameResult', { slot: slot, result: 'bust' });
+        gameState.players[slot].status = 'bust';
+      }
+    }
+  });
+
+  // Oyuncu Stand (Dur)
+  socket.on('playerStand', (data) => {
+    const slot = data.slot;
+    if (gameState.players[slot]) {
+      gameState.players[slot].status = 'stand';
+      socket.emit('playerStand', { slot: slot });
+    }
+  });
+
+  // Oyuncu Double
+  socket.on('playerDouble', (data) => {
+    const slot = data.slot;
+    if (gameState.players[slot]) {
+      gameState.players[slot].bet *= 2;
+      const newCard = drawCard();
+      gameState.players[slot].cards.push(newCard);
+      gameState.players[slot].score = calculateScore(gameState.players[slot].cards);
+
+      socket.emit('playerCards', {
+        slot: slot,
+        cards: gameState.players[slot].cards,
+        score: gameState.players[slot].score,
+        bet: gameState.players[slot].bet
+      });
+
+      gameState.players[slot].status = 'stand';
+    }
+  });
+
+  // Oyuncu Split
+  socket.on('playerSplit', (data) => {
+    const slot = data.slot;
+    if (gameState.players[slot] && gameState.players[slot].cards.length === 2) {
+      if (gameState.players[slot].cards[0].value === gameState.players[slot].cards[1].value) {
+        socket.emit('splitAllowed', { slot: slot });
+      } else {
+        socket.emit('error', { message: 'Split için aynı değerde kartlar gerekli' });
+      }
+    }
+  });
+
+  // Bahis Yap
+  socket.on('placeBet', (data) => {
+    const slot = data.slot;
+    const amount = data.amount;
+    if (gameState.players[slot] && amount > 0 && amount <= 10000) {
+      gameState.players[slot].bet = amount;
+      socket.emit('betPlaced', { slot: slot, amount: amount });
+    }
+  });
+
+  // Yeni Oyun
+  socket.on('newGame', (data) => {
+    const slot = data.slot;
+    if (gameState.players[slot]) {
+      gameState.players[slot].cards = [drawCard(), drawCard()];
+      gameState.players[slot].score = calculateScore(gameState.players[slot].cards);
+      gameState.players[slot].status = 'active';
+
+      socket.emit('playerCards', {
+        slot: slot,
+        cards: gameState.players[slot].cards,
+        score: gameState.players[slot].score,
+        bet: gameState.players[slot].bet
+      });
+
+      // Krupiye kartları
+      gameState.dealer.cards = [drawCard(), drawCard()];
+      gameState.dealer.score = calculateScore(gameState.dealer.cards);
+
+      io.emit('dealerCards', {
+        cards: gameState.dealer.cards,
+        score: gameState.dealer.score,
+        deckRemaining: gameState.deck.length
+      });
+    }
+  });
+
   socket.on('disconnect', () => {
     console.log('Player disconnected:', socket.id);
+    // Oyuncuyu tablosundan kaldır
+    for (let slot in gameState.players) {
+      if (gameState.players[slot].id === socket.id) {
+        delete gameState.players[slot];
+        io.emit('playerDisconnected', { slot: parseInt(slot) });
+      }
+    }
   });
 });
 
 // Start server
 server.listen(port, () => {
   console.log(`🎰 Blackjack server listening on http://localhost:${port}`);
+  gameState.deck = createDeck(); // Başlangıç destesini oluştur
 });

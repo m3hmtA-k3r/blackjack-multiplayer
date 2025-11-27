@@ -39,6 +39,39 @@ header h1 {
   padding: 10px 20px;
   border-radius: 8px;
   font-size: 1rem;
+  margin-bottom: 10px;
+}
+
+.leaderboard {
+  background: rgba(255, 215, 0, 0.05);
+  border: 1px solid gold;
+  border-radius: 8px;
+  padding: 10px 15px;
+}
+
+.leaderboard h4 {
+  color: gold;
+  margin-bottom: 8px;
+  font-size: 0.95rem;
+}
+
+.score-list {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+}
+
+.score-item {
+  background: rgba(0, 255, 0, 0.1);
+  border: 1px solid #00ff00;
+  border-radius: 4px;
+  padding: 5px 10px;
+  color: #00ff00;
+}
+
+.score-item .empty {
+  color: rgba(255, 255, 255, 0.5);
 }
 
 main.table {

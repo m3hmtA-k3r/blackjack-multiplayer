@@ -104,29 +104,44 @@ async function dealerPlay(io) {
         const player = gameState.players[slot];
         if (player.status === 'bust') {
           // Zaten bust, hiçbir şey yapma
+          player.totalScore -= player.bet; // Bahis kaybetti
           continue;
         }
 
         let result = 'loss'; // Varsayılan kayıp
+        let scoreChange = -player.bet; // Varsayılan bahis kaybı
 
         if (gameState.dealer.score > 21) {
           // Dealer bust, oyuncu kazan
           result = 'win';
+          scoreChange = player.bet;
         } else if (player.score > gameState.dealer.score) {
           result = 'win';
+          scoreChange = player.bet;
         } else if (player.score === gameState.dealer.score) {
           result = 'push';
+          scoreChange = 0; // Bahis iade
         } else {
           result = 'loss';
+          scoreChange = -player.bet;
         }
 
+        player.totalScore += scoreChange;
         player.status = result;
         io.to(`player-${slot}`).emit('gameResult', {
           slot: parseInt(slot),
           result: result,
-          dealerScore: gameState.dealer.score
+          dealerScore: gameState.dealer.score,
+          totalScore: player.totalScore
         });
       }
+
+      // Tüm skorları yayınla
+      const scores = {};
+      for (let slot in gameState.players) {
+        scores[slot] = gameState.players[slot].totalScore;
+      }
+      io.emit('updateScores', scores);
 
       resolve();
     })();
@@ -159,7 +174,8 @@ io.on('connection', (socket) => {
         cards: [],
         score: 0,
         bet: 0,
-        status: 'waiting'
+        status: 'waiting',
+        totalScore: 0 // Toplam skor (genel)
       };
       break;
     }
@@ -260,7 +276,11 @@ io.on('connection', (socket) => {
     const amount = data.amount;
     if (gameState.players[slot] && amount > 0 && amount <= 10000) {
       gameState.players[slot].bet = amount;
-      socket.emit('betPlaced', { slot: slot, amount: amount });
+      gameState.players[slot].status = 'ready';
+      socket.emit('betPlaced', { slot: slot, amount: amount, message: `${amount} TL bahis yaptınız` });
+      console.log(`Player ${slot} placed bet: ${amount}`);
+    } else {
+      socket.emit('error', { message: 'Geçersiz bahis miktarı (1-10000)' });
     }
   });
 
@@ -268,6 +288,11 @@ io.on('connection', (socket) => {
   socket.on('newGame', (data) => {
     const slot = data.slot;
     if (gameState.players[slot]) {
+      // Bahis kontrol
+      if (!gameState.players[slot].bet || gameState.players[slot].bet === 0) {
+        socket.emit('error', { message: 'Lütfen önce bahis yapın' });
+        return;
+      }
       gameState.players[slot].cards = [drawCard(), drawCard()];
       gameState.players[slot].score = calculateScore(gameState.players[slot].cards);
       gameState.players[slot].status = 'active';

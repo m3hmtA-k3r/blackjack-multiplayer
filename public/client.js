@@ -58,6 +58,22 @@ socket.on('playerCards', (data) => {
   }
 });
 
+socket.on('betPlaced', (data) => {
+  console.log('Bahis kaydedildi:', data);
+  document.getElementById(`playerBet-${data.slot}`).textContent = `Bahis: ${data.amount}`;
+  alert(`Bahis başarılı: ${data.message}`);
+});
+
+socket.on('error', (data) => {
+  console.error('Hata:', data.message);
+  alert(`Hata: ${data.message}`);
+});
+
+socket.on('updateScores', (scores) => {
+  console.log('Skorlar güncellendi:', scores);
+  updateLeaderboard(scores);
+});
+
 socket.on('gameResult', (data) => {
   console.log('Oyun sonucu:', data);
   const slot = data.slot;
@@ -161,6 +177,28 @@ function enablePlayerActions(slot, enable) {
   
   buttons.forEach(button => {
     button.disabled = !enable;
+  });
+}
+
+function updateLeaderboard(scores) {
+  const scoreList = document.getElementById('scoreList');
+  scoreList.innerHTML = '';
+  
+  if (Object.keys(scores).length === 0) {
+    scoreList.innerHTML = '<p class="empty">Skorlar görüntülenecek</p>';
+    return;
+  }
+  
+  // Skorları sırala (yüksekten düşüğe)
+  const sortedScores = Object.entries(scores)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 7); // En iyi 7 oyuncu
+  
+  sortedScores.forEach(([slot, score], index) => {
+    const scoreEl = document.createElement('div');
+    scoreEl.className = 'score-item';
+    scoreEl.innerHTML = `<strong>#${index + 1}</strong> Oyuncu ${slot}: <strong>${score} TL</strong>`;
+    scoreList.appendChild(scoreEl);
   });
 }
 

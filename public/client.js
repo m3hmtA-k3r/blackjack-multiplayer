@@ -38,7 +38,8 @@ socket.on('playerJoined', (data) => {
 socket.on('dealerCards', (data) => {
   console.log('Krupiye kartları:', data);
   displayDealerCards(data.cards);
-  document.getElementById('dealerScore').textContent = `Puan: ${data.score}`;
+  const scoreText = (data.score === null || data.score === undefined) ? '?' : data.score;
+  document.getElementById('dealerScore').textContent = `Puan: ${scoreText}`;
   document.getElementById('deckCount').textContent = data.deckRemaining || 52;
 });
 
@@ -131,7 +132,13 @@ function displayDealerCards(cards) {
   }
   
   cards.forEach(card => {
-    const cardEl = createCardElement(card);
+    let cardEl;
+    if (card && card.hidden) {
+      cardEl = document.createElement('div');
+      cardEl.className = 'card card-back';
+    } else {
+      cardEl = createCardElement(card);
+    }
     cardsContainer.appendChild(cardEl);
   });
 }

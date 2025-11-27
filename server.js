@@ -83,6 +83,16 @@ async function dealerPlay(io) {
     const delay = (ms) => new Promise(r => setTimeout(r, ms));
 
     (async () => {
+      // Dealer'ın kapalı kartını aç ve tüm oyunculara göster
+      io.emit('dealerCards', {
+        cards: gameState.dealer.cards,
+        score: gameState.dealer.score,
+        deckRemaining: gameState.deck.length
+      });
+
+      // Kısa bekleme sonra çekme işlemi başlasın
+      await delay(600);
+
       // Dealer 17+ kadar oyna
       while (gameState.dealer.score < 17) {
         await delay(800); // Görsel efekt için bekleme
@@ -304,13 +314,15 @@ io.on('connection', (socket) => {
         bet: gameState.players[slot].bet
       });
 
-      // Krupiye kartları
+      // Krupiye kartları (ikinci kart kapalı gösterilecek)
       gameState.dealer.cards = [drawCard(), drawCard()];
       gameState.dealer.score = calculateScore(gameState.dealer.cards);
 
+      // Maskeli yayımlama: ikinci kart gizli
+      const masked = [gameState.dealer.cards[0], { hidden: true }];
       io.emit('dealerCards', {
-        cards: gameState.dealer.cards,
-        score: gameState.dealer.score,
+        cards: masked,
+        score: null, // skoru gizle
         deckRemaining: gameState.deck.length
       });
     }

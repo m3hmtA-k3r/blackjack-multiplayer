@@ -79,6 +79,11 @@ socket.on('gameResult', (data) => {
   }
 });
 
+socket.on('gameStatus', (data) => {
+  console.log('Oyun durumu:', data.status);
+  document.getElementById('gameStatus').textContent = `Oyun Durumu: ${data.status}`;
+});
+
 socket.on('disconnect', () => {
   console.log('Sunucudan bağlantı kesildi');
   document.getElementById('gameStatus').textContent = 'Oyun Durumu: Bağlantı Kesildi';

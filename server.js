@@ -77,6 +77,73 @@ function calculateScore(cards) {
   return score;
 }
 
+// Dealer Otomatik Oynat
+async function dealerPlay(io) {
+  return new Promise((resolve) => {
+    const delay = (ms) => new Promise(r => setTimeout(r, ms));
+
+    (async () => {
+      // Dealer 17+ kadar oyna
+      while (gameState.dealer.score < 17) {
+        await delay(800); // Görsel efekt için bekleme
+        const newCard = drawCard();
+        gameState.dealer.cards.push(newCard);
+        gameState.dealer.score = calculateScore(gameState.dealer.cards);
+
+        io.emit('dealerCards', {
+          cards: gameState.dealer.cards,
+          score: gameState.dealer.score,
+          deckRemaining: gameState.deck.length
+        });
+      }
+
+      await delay(500);
+
+      // Tüm oyuncu sonuçlarını belirle
+      for (let slot in gameState.players) {
+        const player = gameState.players[slot];
+        if (player.status === 'bust') {
+          // Zaten bust, hiçbir şey yapma
+          continue;
+        }
+
+        let result = 'loss'; // Varsayılan kayıp
+
+        if (gameState.dealer.score > 21) {
+          // Dealer bust, oyuncu kazan
+          result = 'win';
+        } else if (player.score > gameState.dealer.score) {
+          result = 'win';
+        } else if (player.score === gameState.dealer.score) {
+          result = 'push';
+        } else {
+          result = 'loss';
+        }
+
+        player.status = result;
+        io.to(`player-${slot}`).emit('gameResult', {
+          slot: parseInt(slot),
+          result: result,
+          dealerScore: gameState.dealer.score
+        });
+      }
+
+      resolve();
+    })();
+  });
+}
+
+// Tüm Oyunlar Bitti mi?
+function areAllPlayersFinished() {
+  for (let slot in gameState.players) {
+    const player = gameState.players[slot];
+    if (player.status === 'active' || player.status === 'waiting') {
+      return false;
+    }
+  }
+  return true;
+}
+
 // Socket.io connection
 io.on('connection', (socket) => {
   console.log('New player connected:', socket.id);
@@ -135,6 +202,14 @@ io.on('connection', (socket) => {
     if (gameState.players[slot]) {
       gameState.players[slot].status = 'stand';
       socket.emit('playerStand', { slot: slot });
+
+      // Tüm oyuncular durdu mu?
+      if (areAllPlayersFinished()) {
+        io.emit('gameStatus', { status: 'Krupiye oynuyor...' });
+        dealerPlay(io).then(() => {
+          io.emit('gameStatus', { status: 'Oyun Bitti - Yeni Oyun Başlatabilirsiniz' });
+        });
+      }
     }
   });
 
@@ -154,7 +229,16 @@ io.on('connection', (socket) => {
         bet: gameState.players[slot].bet
       });
 
+      // Double sonrası otomatik stand
       gameState.players[slot].status = 'stand';
+
+      // Tüm oyuncular durdu mu?
+      if (areAllPlayersFinished()) {
+        io.emit('gameStatus', { status: 'Krupiye oynuyor...' });
+        dealerPlay(io).then(() => {
+          io.emit('gameStatus', { status: 'Oyun Bitti - Yeni Oyun Başlatabilirsiniz' });
+        });
+      }
     }
   });
 

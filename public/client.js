@@ -1,14 +1,11 @@
 // Socket.IO bağlantısı
 const socket = io();
 
-// Oyun durumu
+// Oyun durumu (çoklu slot desteği)
 let gameState = {
   playerId: null,
-  playerSlot: null,
-  cards: [],
-  score: 0,
-  bet: 0,
-  gameActive: false
+  playerSlots: new Set(), // Sahibi olunan slot'lar
+  currentSlot: null, // Aktif slot (UI etkileşimi için)
 };
 
 // Kart gösterimi
@@ -26,13 +23,14 @@ socket.on('connect', () => {
 });
 
 socket.on('playerJoined', (data) => {
-  console.log('Oyuncu katıldı:', data);
+  console.log('Oyuncu katıldı (slot):', data);
   gameState.playerId = data.playerId;
-  gameState.playerSlot = data.slot;
+  gameState.playerSlots.add(data.slot); // Slot'u ekle
+  gameState.currentSlot = data.slot; // Aktif slot'u ayarla
   document.getElementById(`player-${data.slot}`).classList.add('active');
   document.querySelector(`#player-${data.slot} .player-status`).textContent = 'Bağlandı';
   document.querySelector(`#player-${data.slot} .player-status`).classList.add('connected');
-  document.getElementById('playerInfo').textContent = `Oyuncu ${data.slot} - ID: ${socket.id.substring(0, 8)}...`;
+  document.getElementById('playerInfo').textContent = `Oyuncu ID: ${socket.id.substring(0, 8)}... (Slot: ${Array.from(gameState.playerSlots).join(', ')})`;
 });
 
 // When any player occupies a slot
@@ -59,9 +57,12 @@ socket.on('playerDisconnected', (data) => {
     box.querySelector(`.player-info #playerScore-${slot}`).textContent = `Puan: 0`;
     box.querySelector(`.player-info #playerBet-${slot}`);
   }
-  // If this client was in that slot, clear local state
-  if (gameState.playerSlot === slot) {
-    gameState.playerSlot = null;
+  // If this client was in that slot, remove from owned slots and adjust currentSlot
+  if (gameState.playerSlots.has(slot)) {
+    gameState.playerSlots.delete(slot);
+    if (gameState.currentSlot === slot) {
+      gameState.currentSlot = Array.from(gameState.playerSlots)[0] || null;
+    }
   }
 });
 
@@ -84,7 +85,7 @@ socket.on('playerCards', (data) => {
   document.getElementById(`playerScore-${slot}`).textContent = `Puan: ${data.score}`;
   document.getElementById(`playerBet-${slot}`).textContent = `Bahis: ${data.bet}`;
   
-  if (data.slot === gameState.playerSlot) {
+  if (gameState.playerSlots.has(slot)) {
     enablePlayerActions(slot, true);
   }
 });
@@ -241,14 +242,22 @@ function updateLeaderboard(scores) {
 
 // Buton Event Listeners
 document.getElementById('btnNewGame').addEventListener('click', () => {
-  socket.emit('newGame', { slot: gameState.playerSlot });
+  if (!gameState.currentSlot) {
+    alert('Lütfen önce bir kutu seçin');
+    return;
+  }
+  socket.emit('newGame', { slot: gameState.currentSlot });
   document.getElementById('gameStatus').textContent = 'Oyun Durumu: Yeni Oyun Başlatılıyor...';
 });
 
 document.getElementById('btnPlaceBet').addEventListener('click', () => {
+  if (!gameState.currentSlot) {
+    alert('Lütfen önce bir kutu seçin');
+    return;
+  }
   const bet = prompt('Bahis miktarını girin (100-10000):');
   if (bet && !isNaN(bet)) {
-    socket.emit('placeBet', { slot: gameState.playerSlot, amount: parseInt(bet) });
+    socket.emit('placeBet', { slot: gameState.currentSlot, amount: parseInt(bet) });
   }
 });
 
@@ -256,8 +265,8 @@ document.getElementById('btnPlaceBet').addEventListener('click', () => {
 document.querySelectorAll('.btn-hit').forEach((button, index) => {
   button.addEventListener('click', () => {
     const slot = index + 1;
-    if (slot === gameState.playerSlot) {
-      socket.emit('playerHit', { slot: gameState.playerSlot });
+    if (gameState.playerSlots.has(slot)) {
+      socket.emit('playerHit', { slot });
     }
   });
 });
@@ -265,9 +274,9 @@ document.querySelectorAll('.btn-hit').forEach((button, index) => {
 document.querySelectorAll('.btn-stand').forEach((button, index) => {
   button.addEventListener('click', () => {
     const slot = index + 1;
-    if (slot === gameState.playerSlot) {
-      socket.emit('playerStand', { slot: gameState.playerSlot });
-      enablePlayerActions(gameState.playerSlot, false);
+    if (gameState.playerSlots.has(slot)) {
+      socket.emit('playerStand', { slot });
+      enablePlayerActions(slot, false);
     }
   });
 });
@@ -275,9 +284,9 @@ document.querySelectorAll('.btn-stand').forEach((button, index) => {
 document.querySelectorAll('.btn-double').forEach((button, index) => {
   button.addEventListener('click', () => {
     const slot = index + 1;
-    if (slot === gameState.playerSlot) {
-      socket.emit('playerDouble', { slot: gameState.playerSlot });
-      enablePlayerActions(gameState.playerSlot, false);
+    if (gameState.playerSlots.has(slot)) {
+      socket.emit('playerDouble', { slot });
+      enablePlayerActions(slot, false);
     }
   });
 });
@@ -285,28 +294,27 @@ document.querySelectorAll('.btn-double').forEach((button, index) => {
 document.querySelectorAll('.btn-split').forEach((button, index) => {
   button.addEventListener('click', () => {
     const slot = index + 1;
-    if (slot === gameState.playerSlot) {
-      socket.emit('playerSplit', { slot: gameState.playerSlot });
+    if (gameState.playerSlots.has(slot)) {
+      socket.emit('playerSplit', { slot });
     }
   });
 });
 
-// Allow clicking on empty player boxes to claim the seat
+// Allow clicking on empty player boxes to claim the seat (multiple seats allowed)
 document.querySelectorAll('.player-box').forEach((box) => {
   box.addEventListener('click', () => {
     const statusEl = box.querySelector('.player-status');
     const statusText = statusEl ? statusEl.textContent.trim() : '';
     const slot = parseInt(box.id.replace('player-', ''), 10);
 
-    if (gameState.playerSlot) {
-      if (gameState.playerSlot === slot) {
-        alert('Zaten bu kutudasınız.');
-      } else {
-        alert('Zaten bir slota sahipsiniz. Önce ayrılmalısınız.');
-      }
+    // Eğer bu slot'u sahibi ise, aktif slot olarak ayarla
+    if (gameState.playerSlots.has(slot)) {
+      gameState.currentSlot = slot;
+      console.log(`Aktif slot değişti: ${slot}`);
       return;
     }
 
+    // Boş ise talep gönder
     if (statusText === 'Boş') {
       socket.emit('claimSeat', { slot });
     } else {

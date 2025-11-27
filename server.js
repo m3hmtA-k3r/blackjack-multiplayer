@@ -176,17 +176,9 @@ io.on('connection', (socket) => {
   // Do NOT auto-assign a slot on connection. Clients must claim a seat by clicking a box.
   socket.emit('connected', { playerId: socket.id });
 
-  // Claim specific seat on table by clicking empty box
+  // Claim specific seat on table by clicking empty box (multiple seats allowed per socket)
   socket.on('claimSeat', (data) => {
     const slot = data.slot;
-
-    // If this socket already has a slot, reject
-    for (let s in gameState.players) {
-      if (gameState.players[s] && gameState.players[s].id === socket.id) {
-        socket.emit('error', { message: 'Zaten bir slota sahipsiniz' });
-        return;
-      }
-    }
 
     if (!gameState.players[slot]) {
       gameState.players[slot] = {

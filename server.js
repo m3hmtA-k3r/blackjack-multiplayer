@@ -199,6 +199,36 @@ io.on('connection', (socket) => {
     socket.emit('error', { message: 'Tüm masalar dolu' });
   }
 
+  // Claim specific seat on table by clicking empty box
+  socket.on('claimSeat', (data) => {
+    const slot = data.slot;
+
+    // If this socket already has a slot, reject
+    for (let s in gameState.players) {
+      if (gameState.players[s] && gameState.players[s].id === socket.id) {
+        socket.emit('error', { message: 'Zaten bir slota sahipsiniz' });
+        return;
+      }
+    }
+
+    if (!gameState.players[slot]) {
+      gameState.players[slot] = {
+        id: socket.id,
+        slot: slot,
+        cards: [],
+        score: 0,
+        bet: 0,
+        status: 'waiting',
+        totalScore: 0
+      };
+      socket.emit('playerJoined', { playerId: socket.id, slot: slot });
+      io.emit('playerConnected', { slot: slot, playerId: socket.id });
+      console.log(`Player ${socket.id} claimed slot ${slot}`);
+    } else {
+      socket.emit('error', { message: 'Bu kutu dolu' });
+    }
+  });
+
   // Oyuncu kartı çeker (Hit)
   socket.on('playerHit', (data) => {
     const slot = data.slot;

@@ -35,6 +35,36 @@ socket.on('playerJoined', (data) => {
   document.getElementById('playerInfo').textContent = `Oyuncu ${data.slot} - ID: ${socket.id.substring(0, 8)}...`;
 });
 
+// When any player occupies a slot
+socket.on('playerConnected', (data) => {
+  const slot = data.slot;
+  const statusEl = document.querySelector(`#player-${slot} .player-status`);
+  if (statusEl) {
+    statusEl.textContent = 'Bağlandı';
+    statusEl.classList.add('connected');
+  }
+});
+
+// When a player leaves a slot, mark it empty
+socket.on('playerDisconnected', (data) => {
+  const slot = data.slot;
+  const box = document.getElementById(`player-${slot}`);
+  if (box) {
+    box.classList.remove('active', 'bust');
+    const statusEl = box.querySelector('.player-status');
+    statusEl.textContent = 'Boş';
+    statusEl.classList.remove('connected');
+    const cardsContainer = box.querySelector('.player-cards');
+    cardsContainer.innerHTML = '<p class="empty">Kartlar görüntülenecek</p>';
+    box.querySelector(`.player-info #playerScore-${slot}`).textContent = `Puan: 0`;
+    box.querySelector(`.player-info #playerBet-${slot}`);
+  }
+  // If this client was in that slot, clear local state
+  if (gameState.playerSlot === slot) {
+    gameState.playerSlot = null;
+  }
+});
+
 socket.on('dealerCards', (data) => {
   console.log('Krupiye kartları:', data);
   displayDealerCards(data.cards);
@@ -257,6 +287,30 @@ document.querySelectorAll('.btn-split').forEach((button, index) => {
     const slot = index + 1;
     if (slot === gameState.playerSlot) {
       socket.emit('playerSplit', { slot: gameState.playerSlot });
+    }
+  });
+});
+
+// Allow clicking on empty player boxes to claim the seat
+document.querySelectorAll('.player-box').forEach((box) => {
+  box.addEventListener('click', () => {
+    const statusEl = box.querySelector('.player-status');
+    const statusText = statusEl ? statusEl.textContent.trim() : '';
+    const slot = parseInt(box.id.replace('player-', ''), 10);
+
+    if (gameState.playerSlot) {
+      if (gameState.playerSlot === slot) {
+        alert('Zaten bu kutudasınız.');
+      } else {
+        alert('Zaten bir slota sahipsiniz. Önce ayrılmalısınız.');
+      }
+      return;
+    }
+
+    if (statusText === 'Boş') {
+      socket.emit('claimSeat', { slot });
+    } else {
+      alert('Bu kutu dolu');
     }
   });
 });

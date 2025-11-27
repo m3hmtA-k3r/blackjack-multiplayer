@@ -173,31 +173,8 @@ function areAllPlayersFinished() {
 io.on('connection', (socket) => {
   console.log('New player connected:', socket.id);
 
-  // Oyuncuyu bir slota ata
-  let assignedSlot = null;
-  for (let slot = 1; slot <= 7; slot++) {
-    if (!gameState.players[slot]) {
-      assignedSlot = slot;
-      gameState.players[slot] = {
-        id: socket.id,
-        slot: slot,
-        cards: [],
-        score: 0,
-        bet: 0,
-        status: 'waiting',
-        totalScore: 0 // Toplam skor (genel)
-      };
-      break;
-    }
-  }
-
-  if (assignedSlot) {
-    socket.emit('playerJoined', { playerId: socket.id, slot: assignedSlot });
-    io.emit('playerConnected', { slot: assignedSlot, playerId: socket.id });
-    console.log(`Player ${socket.id} assigned to slot ${assignedSlot}`);
-  } else {
-    socket.emit('error', { message: 'Tüm masalar dolu' });
-  }
+  // Do NOT auto-assign a slot on connection. Clients must claim a seat by clicking a box.
+  socket.emit('connected', { playerId: socket.id });
 
   // Claim specific seat on table by clicking empty box
   socket.on('claimSeat', (data) => {
